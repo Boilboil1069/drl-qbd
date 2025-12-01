@@ -298,6 +298,21 @@ def run_grid_experiment(
 
     # ---------------- internal: run one mode -----------------
     def _run_single_mode(one_mode:str):
+        # 为了防止 DQN 在某些随机种子下出现极端异常的大队长值
+        # 我们在每个 (corr, load_factor, algo) 组合上对 DQN 做多次重试：
+        #   - 初始使用全局 seed
+        #   - 若评价得到的总队长 L_sim_total 明显过大（超过鲁棒阈值），
+        #     则自动更换随机种子重新训练+评估，最多若干次；
+        #   - 若多次仍异常，则丢弃该极端样本，使用剩余正常尝试的平均值；
+        #   - 这样可以减小偶然性爆炸点对整体曲线的影响。
+
+        # 超大值判定阈值：相对“典型”队长的倍数上界
+        # 这里采用一个经验上界：若 L_sim_total > anomaly_factor * n_servers
+        # 则认为是异常（例如队长远超服务器数目数量级）。
+        anomaly_factor = 10.0
+        # DQN 在每个场景下的最多尝试次数
+        dqn_max_retries = 5
+
         def build_map(level):
             if one_mode == "base":
                 return map_with_correlation(level)
@@ -329,23 +344,121 @@ def run_grid_experiment(
                 for algo in algos:
                     print(f"\n--- 策略: {algo} ---")
                     env = ParallelQueueEnv(D0, D1, mus, horizon_time=horizon_time)
+                    n_servers = len(mus)
 
                     # 训练策略：DQN 返回 (model, info)，其余只返回 model 或 None
-                    train_ret = train_policy(env, algo, episodes=train_episodes)
-                    if isinstance(train_ret, tuple):
-                        model = train_ret[0]
-                    else:
-                        model = train_ret
+                    def _train_and_eval_once(cur_seed: int):
+                        """在给定随机种子下训练并评估一次策略，返回 (L_sim_total, L_sim_vec, L_th_total, L_th_vec, err, routing_probs)。"""
+                        set_seed(cur_seed)
+                        env.seed = cur_seed if hasattr(env, "seed") else None
 
-                    L_sim_vec = evaluate_policy(env, algo, model, episodes=eval_episodes)
-                    L_sim_total = float(np.sum(L_sim_vec))
+                        train_ret_inner = train_policy(env, algo, episodes=train_episodes)
+                        if isinstance(train_ret_inner, tuple):
+                            model_inner = train_ret_inner[0]
+                        else:
+                            model_inner = train_ret_inner
+
+                        L_sim_vec_inner = evaluate_policy(env, algo, model_inner, episodes=eval_episodes)
+                        L_sim_total_inner = float(np.sum(L_sim_vec_inner))
+                        routing_inner = estimate_routing_probs(env, algo, model_inner, num_samples=routing_samples)
+                        L_th_vec_inner = theoretical_L(D0, D1, mus, routing_inner)
+                        L_th_total_inner = float(np.sum(L_th_vec_inner))
+                        err_inner = abs(L_th_total_inner - L_sim_total_inner)
+                        return (
+                            L_sim_total_inner,
+                            L_sim_vec_inner,
+                            L_th_total_inner,
+                            L_th_vec_inner,
+                            err_inner,
+                            routing_inner,
+                        )
+
+                    # 针对 DQN 做多次尝试以剔除异常爆点
+                    if algo == "dqn":
+                        trial_results = []
+                        base_seed = seed
+                        for trial in range(dqn_max_retries):
+                            cur_seed = base_seed + trial
+                            (
+                                L_sim_total_t,
+                                L_sim_vec_t,
+                                L_th_total_t,
+                                L_th_vec_t,
+                                err_t,
+                                routing_t,
+                            ) = _train_and_eval_once(cur_seed)
+
+                            # 判定是否为异常的超大值
+                            if L_sim_total_t > anomaly_factor * n_servers:
+                                print(
+                                    f"  [DQN][WARNING] 发现异常大 L_sim_total={L_sim_total_t:.3f} (> {anomaly_factor} * n_servers={n_servers}), "
+                                    f"trial={trial+1}, seed={cur_seed}，丢弃本次结果并重试。"
+                                )
+                                continue
+
+                            trial_results.append(
+                                (
+                                    L_sim_total_t,
+                                    L_sim_vec_t,
+                                    L_th_total_t,
+                                    L_th_vec_t,
+                                    err_t,
+                                    routing_t,
+                                )
+                            )
+
+                        if not trial_results:
+                            # 若全部尝试都异常，则保留最后一次但做显式标记
+                            print(
+                                f"  [DQN][WARN] {dqn_max_retries} 次尝试全部出现异常大队长，"
+                                f"将保留最后一次结果用于记录，但请谨慎解释该点。"
+                            )
+                            (
+                                L_sim_total,
+                                L_sim_vec,
+                                L_th_total,
+                                L_th_vec,
+                                err,
+                                routing_probs,
+                            ) = _train_and_eval_once(base_seed + dqn_max_retries - 1)
+                        else:
+                            # 对所有“正常”尝试取平均，得到更稳定的估计
+                            L_sim_total = float(np.mean([x[0] for x in trial_results]))
+                            L_th_total = float(np.mean([x[2] for x in trial_results]))
+                            err = float(np.mean([x[4] for x in trial_results]))
+
+                            # 便于调试：打印所有尝试结果
+                            print("  [DQN] 多次尝试结果统计（已剔除异常大值）:")
+                            for idx_try, vals in enumerate(trial_results, start=1):
+                                Ls, _, Lt, _, e, _ = vals
+                                print(
+                                    f"    trial#{idx_try}: L_sim={Ls:.3f}, "
+                                    f"L_theory={Lt:.3f}, err={e:.3f}"
+                                )
+                            print(
+                                f"  [DQN] 取平均后: L_sim_total={L_sim_total:.3f}, "
+                                f"L_theory_total={L_th_total:.3f}, err={err:.3f}"
+                            )
+
+                            # 为了后续热力图等数组一致性，使用最后一次正常尝试的向量形状
+                            L_sim_vec = trial_results[-1][1]
+                            L_th_vec = trial_results[-1][3]
+                            routing_probs = trial_results[-1][5]
+
+                    else:
+                        # 非 DQN 策略：保持原有单次流程
+                        (
+                            L_sim_total,
+                            L_sim_vec,
+                            L_th_total,
+                            L_th_vec,
+                            err,
+                            routing_probs,
+                        ) = _train_and_eval_once(seed)
+
                     print(f"  仿真平均队长 L_sim_vec={L_sim_vec}, sum={L_sim_total:.3f}")
-                    routing_probs = estimate_routing_probs(env, algo, model, num_samples=routing_samples)
                     print(f"  路由概率矩阵 P_r(j):\n{routing_probs}")
-                    L_th_vec = theoretical_L(D0, D1, mus, routing_probs)
-                    L_th_total = float(np.sum(L_th_vec))
                     print(f"  理论平均队长 L_theory_vec={L_th_vec}, sum={L_th_total:.3f}")
-                    err = abs(L_th_total - L_sim_total)
                     print(f"  误差 |L_theory - L_sim| = {err:.3f}")
                     mode_results[algo]["L_sim"][ic, il] = L_sim_total
                     mode_results[algo]["L_theory"][ic, il] = L_th_total

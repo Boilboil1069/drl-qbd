@@ -8,32 +8,35 @@ import numpy as np
 
 
 # ============================================================
-# Matplotlib 全局字体配置（支持中文）
+# Matplotlib global font configuration (with basic CJK support)
 # ============================================================
 
 
 def configure_matplotlib_for_chinese():
     """Configure matplotlib font to properly display Chinese depending on OS.
 
-    Picks a prioritized list of candidate fonts (matched by substring) and sets
-    matplotlib's sans-serif list to those candidates. Falls back to DejaVu Sans
-    or the first available fonts when no Chinese-capable font is detected.
-    Also ensures the minus sign renders properly and PDF/SVG font embedding
-    options are set so saved figures include the proper fonts.
+    - On macOS prefer common CJK fonts (e.g. Noto Sans CJK, "Heiti") so that
+      Chinese characters are available when needed;
+    - Build a candidate list via substring matching and assign it to
+      ``font.sans-serif``;
+    - Always keep ``DejaVu Sans`` as a safe fallback for Latin glyphs;
+    - Configure PDF/SVG embedding options so exported vector figures contain
+      the required fonts.
     """
     try:
         system = platform.system()
         # candidate substrings (order = preference)
         if system == "Darwin":
+            # macOS: put real CJK fonts (with full Chinese coverage) first
             preferred = [
-                "PingFang",
-                "PingFang SC",
-                "PingFang HK",
-                "AppleGothic",
+                "Noto Sans CJK",
                 "Heiti",
                 "STHeiti",
+                "PingFang SC",
+                "PingFang",
                 "Songti",
-                "Noto Sans CJK",
+                "Hiragino Sans GB",
+                "Hiragino Sans",
             ]
         elif system == "Windows":
             preferred = [
@@ -66,6 +69,8 @@ def configure_matplotlib_for_chinese():
 
         # Apply to rcParams: prefer the chosen list for sans-serif and set family
         if chosen_list:
+            # Mix CJK fonts and DejaVu so matplotlib can automatically
+            # fall back between them and reduce missing-glyph issues.
             mpl.rcParams["font.sans-serif"] = chosen_list
             mpl.rcParams["font.family"] = "sans-serif"
 
@@ -91,12 +96,23 @@ def configure_matplotlib_for_chinese():
         print("[MATPLOTLIB] resolved font files:")
         for fam, path in resolved:
             print(f"  {fam} -> {path}")
+
+        # Extra debug: try to resolve the first CJK candidate with a sample
+        # Chinese character to confirm a font file can be found.
+        if chosen_list:
+            try:
+                sample_char = "队"  # just a common CJK character for probing
+                fp = FontProperties(family=chosen_list[0])
+                _ = fm.findfont(fp, fallback_to_default=True)
+                print(f"[MATPLOTLIB] primary CJK font candidate='{chosen_list[0]}' should cover '{sample_char}' if glyph exists.")
+            except Exception as _e:
+                print(f"[MATPLOTLIB] warning: primary CJK font '{chosen_list[0]}' lookup error: {_e}")
     except Exception as e:
         print(f"[MATPLOTLIB] failed to configure font for Chinese: {e}")
 
 
 # ============================================================
-# 通用图像保存工具
+# Generic figure-saving utilities
 # ============================================================
 
 
@@ -116,7 +132,7 @@ def save_figure(fig, base_name: str, out_dir: str = "figures", dpi: int | None =
 
 
 # ============================================================
-# 通用理论 vs 仿真对比绘图
+# Generic theory-vs-simulation comparison plot
 # ============================================================
 
 
@@ -138,7 +154,7 @@ def plot_theory_vs_sim(L_sim, L_th):
 
 
 # ============================================================
-# DQN 训练相关绘图
+# DQN training-related plots
 # ============================================================
 
 
@@ -181,7 +197,7 @@ def plot_dqn_q_loss(loss_hist, out_dir: str, timestamp: str):
 
 
 # ============================================================
-# run_grid_experiment 相关绘图
+# run_grid_experiment-related plots
 # ============================================================
 
 
@@ -211,9 +227,9 @@ def plot_mean_queue_vs_load(exp_data, algos=None, out_dir="figures"):
                 label=f"corr={corr:.2f}",
             )
 
-        ax.set_xlabel("负载缩放因子 (load factor)")
-        ax.set_ylabel("平均总队长 (仿真)")
-        ax.set_title(f"策略 {algo}: 平均总队长 vs 负载")
+        ax.set_xlabel("Load factor")
+        ax.set_ylabel("Mean total queue length (simulation)")
+        ax.set_title(f"Policy {algo}: mean total queue length vs load")
         ax.grid(True, linestyle="--", alpha=0.4)
         ax.legend()
         plt.tight_layout()
@@ -224,10 +240,9 @@ def plot_mean_queue_vs_load(exp_data, algos=None, out_dir="figures"):
 
 def plot_mean_queue_vs_load_fixed_corr(exp_data, corr, algos=None, out_dir="figures",
                                        filename_prefix="mean_queue_vs_load_fixed_corr"):
-    """
-    固定相关性 corr，下画不同负载因子下平均总队长随负载变化。
+    """For a fixed correlation level, plot mean total queue length vs load.
 
-    仅绘制 load_factor < 1.0 的部分，以聚焦稳定区间的行为。
+    Only load_factor < 1.0 is plotted to focus on the stable region.
     """
     results = exp_data["results"]
     corr_levels = exp_data["corr_levels"]
@@ -236,12 +251,12 @@ def plot_mean_queue_vs_load_fixed_corr(exp_data, corr, algos=None, out_dir="figu
     if algos is None:
         algos = list(results.keys())
 
-    # 找到最接近 corr 的索引
+    # find index of correlation closest to the target value
     corr_levels_arr = np.array(corr_levels, dtype=float)
     idx = int(np.argmin(np.abs(corr_levels_arr - float(corr))))
     corr_val = corr_levels_arr[idx]
 
-    # 仅保留 load_factor < 1.0 的索引; 若没有则使用全部
+    # keep only load_factor < 1.0; if none, keep all
     mask = load_factors < 1.0
     if not np.any(mask):
         mask = np.ones_like(load_factors, dtype=bool)
@@ -271,9 +286,9 @@ def plot_mean_queue_vs_load_fixed_corr(exp_data, corr, algos=None, out_dir="figu
         L_line = L_line_full[mask]
         ax.plot(x_vals, L_line, marker="o", linewidth=2, label=algo)
 
-    ax.set_xlabel("负载缩放因子 (load factor)", fontsize=14)
-    ax.set_ylabel("平均总队长 (仿真)", fontsize=14)
-    ax.set_title(f"固定相关性 corr={corr_val:.2f} 时，不同策略平均总队长 vs 负载", fontsize=16)
+    ax.set_xlabel("Load factor", fontsize=14)
+    ax.set_ylabel("Mean total queue length (simulation)", fontsize=14)
+    ax.set_title(f"Fixed correlation corr={corr_val:.2f}: mean total queue length vs load", fontsize=16)
     ax.grid(True, linestyle="--", alpha=0.6)
     _dedup_legend(ax)
     plt.tight_layout()
@@ -292,7 +307,7 @@ def plot_error_vs_corr(exp_data, algos=None, out_dir="figures"):
     if algos is None:
         algos = list(results.keys())
 
-    # 只保留 load factor < 1 的索引
+    # only keep indices with load factor < 1
     lf_arr = np.array(load_factors, dtype=float)
     valid_mask = lf_arr < 1.0
     valid_indices = np.where(valid_mask)[0]
@@ -318,9 +333,9 @@ def plot_error_vs_corr(exp_data, algos=None, out_dir="figures"):
                 label=f"load={lf:.2f}",
             )
 
-        ax.set_xlabel("相关性水平 (corr)")
+        ax.set_xlabel("Correlation level")
         ax.set_ylabel(r"$|L_{\mathrm{theory}} - L_{\mathrm{sim}}|$")
-        ax.set_title(f"策略 {algo}: 理论-仿真误差 vs 相关性")
+        ax.set_title(f"Policy {algo}: theory-simulation error vs correlation")
         ax.grid(True, linestyle="--", alpha=0.4)
         ax.legend()
         plt.tight_layout()
@@ -360,9 +375,9 @@ def plot_error_heatmap(exp_data, algo, out_dir="figures"):
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_label(r"$|L_{\mathrm{theory}} - L_{\mathrm{sim}}|$")
 
-    ax.set_xlabel("负载缩放 (load factor)")
-    ax.set_ylabel("相关性 (corr)")
-    ax.set_title(f"策略 {algo}: 理论-仿真误差热力图")
+    ax.set_xlabel("Load factor")
+    ax.set_ylabel("Correlation")
+    ax.set_title(f"Policy {algo}: theory-simulation error heatmap")
     plt.tight_layout()
 
     save_figure(fig, f"error_heatmap_{algo}", out_dir)
@@ -370,11 +385,11 @@ def plot_error_heatmap(exp_data, algo, out_dir="figures"):
 
 
 def plot_error_vs_load_1d(exp_data, algos=None,
-                          title="理论 vs 仿真误差随利用率变化",
+                          title="Theory vs simulation error vs load factor",
                           out_dir="figures",
                           filename_prefix="error_vs_load"):
-    """
-    基于 run_grid_experiment 生成的按负载聚合结果，绘制误差-负载折线图。
+    """Plot error vs load factor based on per-load aggregated results from
+    ``run_grid_experiment``.
     """
     results = exp_data["results"]
     load_factors = list(exp_data["load_factors"])
@@ -403,8 +418,8 @@ def plot_error_vs_load_1d(exp_data, algos=None,
             errors.append(abs(L_sim - L_theory))
         ax.plot(load_factors, errors, marker="o", linewidth=2, label=algo)
 
-    ax.set_xlabel("利用率 (load factor)", fontsize=14)
-    ax.set_ylabel("误差 |L_sim − L_theory|", fontsize=14)
+    ax.set_xlabel("Load factor", fontsize=14)
+    ax.set_ylabel("Error |L_sim − L_theory|", fontsize=14)
     ax.set_title(title, fontsize=16)
     ax.grid(True, linestyle="--", alpha=0.6)
     ax.legend(fontsize=12)

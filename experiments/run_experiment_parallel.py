@@ -59,14 +59,15 @@ def _run_single_mode_parallel(mode: str,
 def main():
     """并行版本的大实验入口：不同 map_mode 在多个进程中并行执行。"""
     start_time = time.time()
-    algos = ("random", "jsq", "jiq", "pod2", "lw", "lc", "rr", "dqn")
+    # algos = ("random", "jsq", "jiq", "pod2", "lw", "lc", "rr", "dqn")
     # algos = ("random", "jsq", "dqn")
+    algos = ('dqn', "jsq")
     corr_levels = (0.2, 0.4, 0.6, 0.8, 1.0)
     load_factors = (0.1, 0.3, 0.5, 0.7, 0.9, 1, 1.2, 1.3)
     mus = (4.5, 4.0, 3.5, 3.0)
 
     horizon_time = 1000.0
-    train_episodes = 128
+    train_episodes = 100
     eval_episodes = 5
     routing_samples = 20000
     seed = 2024
