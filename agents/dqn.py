@@ -176,6 +176,9 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
     loss_history = []  # record per-episode mean loss
     start_time = datetime.now().strftime('%Y%m%d_%H%M%S')
 
+    train_interval = 4  # 新增：每 4 步训练一次
+    global_step = 0
+
     for ep in tqdm(range(episodes), desc="[DQN] Training"):
         obs, _ = env.reset()
         done = False
@@ -185,6 +188,7 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
         steps = 0
         while not done:
             steps += 1
+            global_step += 1
             eps = max(0.05, 0.5 - ep / episodes)
             if random.random() < eps:
                 act = env.action_space.sample()
@@ -204,7 +208,7 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
             ep_ret += rew
 
             # Training step
-            if len(buf) >= 64:  # wait until minimal batch size reached
+            if len(buf) >= 64 and global_step % train_interval == 0:  # wait until minimal batch size reached
                 if prioritized:
                     s, a, r, s2, d, ph, idxs, w = buf.sample(64)
                 else:
