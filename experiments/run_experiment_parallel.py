@@ -63,7 +63,7 @@ def main():
     # algos = ("random", "jsq", "dqn")
     algos = ('dqn', "jsq")
     corr_levels = (0.2, 0.4, 0.6, 0.8, 1.0)
-    load_factors = (0.1, 0.3, 0.5, 0.7, 0.9, 1, 1.2, 1.3)
+    load_factors = (0.1, 0.3, 0.5, 0.7, 0.9, 1.0, 1.2, 1.3)
     mus = (4.5, 4.0, 3.5, 3.0)
 
     horizon_time = 1000.0
