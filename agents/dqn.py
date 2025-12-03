@@ -164,10 +164,10 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
             burst_phases = []
 
     if prioritized:
-        buf = PrioritizedReplayBuffer(capacity=50000, alpha=alpha, beta_start=beta_start,
+        buf = PrioritizedReplayBuffer(capacity=2000000, alpha=alpha, beta_start=beta_start,
                                       burst_phases=burst_phases, burst_scale=burst_scale)
     else:
-        buf = ReplayBuffer(size=50000)
+        buf = ReplayBuffer(size=200000)
 
     gamma = 0.99
     tau = 0.01
