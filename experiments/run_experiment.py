@@ -275,7 +275,8 @@ def run_grid_experiment(
         seed=2024,
         map_mode="base",      # 单模式（向后兼容）
         map_modes=None,        # 若提供序列，将对每个模式运行并汇总
-        verbose_task: bool = True,  # 新增：是否打印 [TASK x/y] 进度日志
+        verbose_task: bool = True,  # 是否打印 [TASK x/y] 进度日志
+        global_progress_tag: str | None = None,  # 新增：外部传入的全局 TASK 描述，用于 DQN tqdm
 ):
     """
     在 (相关性 × 负载) 网格上跑所有策略，并记录：
@@ -364,9 +365,14 @@ def run_grid_experiment(
                         set_seed(cur_seed)
                         env.seed = cur_seed if hasattr(env, "seed") else None
 
-                        # 为 DQN 构造进度条 tag：只展示场景信息，不再带 TASK x/y，避免在并行/单点场景下出现 1/1 误导
+                        # 为 DQN 构造进度条 tag：
+                        #   - 若外部提供了 global_progress_tag，则优先使用它（包含 TASK i/total 全局进度）；
+                        #   - 否则退回到本地的场景信息 tag（mode/corr/load 等）。
                         if algo == "dqn":
-                            tag = f"mode={one_mode}, algo={algo}, corr={corr}, load={lf}"
+                            if global_progress_tag is not None:
+                                tag = global_progress_tag
+                            else:
+                                tag = f"mode={one_mode}, algo={algo}, corr={corr}, load={lf}"
                         else:
                             tag = None
 

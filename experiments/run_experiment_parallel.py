@@ -76,6 +76,7 @@ def _run_single_scenario(mode: str,
         map_mode=mode,
         map_modes=None,
         verbose_task=False,
+        global_progress_tag=progress_tag,
     )
 
     # exp 是单模式返回结构：{"results": {algo: {...}}, "corr_levels": [...], ...}
