@@ -26,37 +26,40 @@ from utils.persistence import save_experiment_data  # 新增: 数据持久化
 configure_matplotlib_for_chinese()
 
 
-def _run_single_mode_parallel(mode: str,
-                              algos,
-                              corr_levels,
-                              load_factors,
-                              mus,
-                              horizon_time: float,
-                              train_episodes: int,
-                              eval_episodes: int,
-                              routing_samples: int,
-                              seed: int,
-                              total_tasks: int,
-                              mode_index: int,
-                              total_modes: int):
-    """在子进程中跑单个 map_mode 的 run_grid_experiment。
+def _run_single_scenario(mode: str,
+                         algo: str,
+                         corr: float,
+                         lf: float,
+                         mus,
+                         horizon_time: float,
+                         train_episodes: int,
+                         eval_episodes: int,
+                         routing_samples: int,
+                         seed: int,
+                         ic: int,
+                         il: int,
+                         algo_index: int,
+                         total_algos: int,
+                         total_corrs: int,
+                         total_loads: int):
+    """在子进程中跑单个 (mode, corr, load, algo) 组合，返回原 run_grid_experiment
+    中 _run_single_mode 对应位置的结果切片。
 
-    返回 (mode, exp_data_mode) 方便主进程汇总。
+    返回: (mode, algo, ic, il, L_sim_total, L_th_total, err, by_load_increment)
+    其中 by_load_increment 是本 load_factor 下的 (L_sim_total, L_th_total)，
+    供主进程做在线平均聚合。
     """
-    print(f"[PARALLEL][MODE {mode_index+1}/{total_modes}] Start map_mode='{mode}'")
+    from experiments.run_experiment import run_grid_experiment as _rg
     print(
-        f"[PARALLEL][MODE {mode}] 总实验组合数: {total_tasks} = "
-        f"len(corr_levels)={len(corr_levels)} × len(load_factors)={len(load_factors)} × len(algos)={len(algos)}"
-    )
-    print(
-        f"[PARALLEL][MODE {mode}] 关键训练参数: horizon_time={horizon_time}, "
-        f"train_episodes={train_episodes}, eval_episodes={eval_episodes}, routing_samples={routing_samples}, seed={seed}"
+        f"[WORKER] mode={mode}, algo={algo} ({algo_index+1}/{total_algos}), "
+        f"corr={corr} ({ic+1}/{total_corrs}), load={lf} ({il+1}/{total_loads})"
     )
 
-    exp_data_mode = run_grid_experiment(
-        algos=algos,
-        corr_levels=corr_levels,
-        load_factors=load_factors,
+    # 复用单场景逻辑：只跑单一 (corr, load) 和单一 algo
+    exp = _rg(
+        algos=(algo,),
+        corr_levels=(corr,),
+        load_factors=(lf,),
         mus=mus,
         horizon_time=horizon_time,
         train_episodes=train_episodes,
@@ -66,11 +69,22 @@ def _run_single_mode_parallel(mode: str,
         map_mode=mode,
         map_modes=None,
     )
-    return mode, exp_data_mode
+
+    # exp 是单模式返回结构：{"results": {algo: {...}}, "corr_levels": [...], ...}
+    res_algo = exp["results"][algo]
+    L_sim = float(res_algo["L_sim"][0, 0])
+    L_th = float(res_algo["L_theory"][0, 0])
+    err = float(res_algo["err"][0, 0])
+
+    by_load_increment = (L_sim, L_th)
+    return mode, algo, ic, il, L_sim, L_th, err, lf, by_load_increment
 
 
 def main():
-    """并行版本的大实验入口：不同 map_mode 在多个进程中并行执行。"""
+    """更细粒度并行版本：每个 (mode, corr, load, algo) 组合独立子进程。
+
+    注意：总组合数较大时要适当调小 workers，以避免 CPU 过载或显存争用。
+    """
     start_time = time.time()
     algos = ("random", "jsq", "jiq", "pod2", "lw", "lc", "rr", "dqn")
     corr_levels = (0.2, 0.4, 0.6, 0.8, 1.0)
@@ -86,9 +100,11 @@ def main():
 
     map_modes = ("base", "hawkes", "super_burst")
 
-    # 计算总实验组合数量，用于打印
-    total_tasks = len(corr_levels) * len(load_factors) * len(algos)
-    total_modes = len(map_modes)
+    n_modes = len(map_modes)
+    n_corrs = len(corr_levels)
+    n_loads = len(load_factors)
+    n_algos = len(algos)
+    total_tasks = n_modes * n_corrs * n_loads * n_algos
 
     base_fig_dir = "figures"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -96,44 +112,91 @@ def main():
     ensure_dir(root_out)
 
     print("#" * 80)
-    print("[PARALLEL] Start parallel grid experiment for modes:", map_modes)
+    print("[PARALLEL] Start fine-grained parallel grid experiment")
     print(
-        f"[PARALLEL] 全局总实验组合数: {total_modes} × {total_tasks} = {total_modes * total_tasks}"
+        f"[PARALLEL] 总实验组合数: modes={n_modes} × corrs={n_corrs} × loads={n_loads} × algos={n_algos} = {total_tasks}"
     )
     print(
-        f"[PARALLEL] 全局关键训练参数: horizon_time={horizon_time}, train_episodes={train_episodes}, "
+        f"[PARALLEL] 关键训练参数: horizon_time={horizon_time}, train_episodes={train_episodes}, "
         f"eval_episodes={eval_episodes}, routing_samples={routing_samples}, seed={seed}"
     )
     print("#" * 80)
 
-    per_mode_results = {}
+    # 预先为每个 mode / algo 创建结果容器，与 run_grid_experiment 单模式结构一致
+    per_mode_results: dict[str, dict] = {}
+    for mode in map_modes:
+        mode_results = {}
+        for algo in algos:
+            mode_results[algo] = {
+                "L_sim": [[0.0 for _ in load_factors] for _ in corr_levels],
+                "L_theory": [[0.0 for _ in load_factors] for _ in corr_levels],
+                "err": [[0.0 for _ in load_factors] for _ in corr_levels],
+                "by_load": {lf: {"L_sim": 0.0, "L_theory": 0.0} for lf in load_factors},
+            }
+        per_mode_results[mode] = {
+            "results": mode_results,
+            "corr_levels": list(corr_levels),
+            "load_factors": list(load_factors),
+            "mus": mus,
+            "map_mode": mode,
+        }
 
-    # 并行跑每个 map_mode
+    # 计数器，用于按 (corr, load) 在线平均 by_load（同一负载下不同 corr 的平均）
+    by_load_counts: dict[str, dict[float, int]] = {
+        mode: {lf: 0 for lf in load_factors} for mode in map_modes
+    }
+
+    submitted = 0
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = []
-        for idx, mode in enumerate(map_modes):
-            fut = executor.submit(
-                _run_single_mode_parallel,
-                mode,
-                algos,
-                corr_levels,
-                load_factors,
-                mus,
-                horizon_time,
-                train_episodes,
-                eval_episodes,
-                routing_samples,
-                seed,
-                total_tasks,
-                idx,
-                total_modes,
-            )
-            futures.append(fut)
+        for mode_idx, mode in enumerate(map_modes):
+            for ic, corr in enumerate(corr_levels):
+                for il, lf in enumerate(load_factors):
+                    for algo_index, algo in enumerate(algos):
+                        fut = executor.submit(
+                            _run_single_scenario,
+                            mode,
+                            algo,
+                            float(corr),
+                            float(lf),
+                            mus,
+                            horizon_time,
+                            train_episodes,
+                            eval_episodes,
+                            routing_samples,
+                            seed,
+                            ic,
+                            il,
+                            algo_index,
+                            n_algos,
+                            n_corrs,
+                            n_loads,
+                        )
+                        futures.append(fut)
+                        submitted += 1
 
-        for fut in as_completed(futures):
-            mode, exp_data_mode = fut.result()
-            per_mode_results[mode] = exp_data_mode
-            print(f"[PARALLEL] Finished mode = {mode}")
+        print(f"[PARALLEL] Submitted {submitted} futures")
+
+        for i, fut in enumerate(as_completed(futures), start=1):
+            mode, algo, ic, il, L_sim, L_th, err, lf, by_load_inc = fut.result()
+            print(
+                f"[COLLECT] {i}/{submitted}: mode={mode}, algo={algo}, ic={ic}, il={il}, "
+                f"L_sim={L_sim:.3f}, L_th={L_th:.3f}, err={err:.3f}"
+            )
+
+            res = per_mode_results[mode]["results"][algo]
+            res["L_sim"][ic][il] = L_sim
+            res["L_theory"][ic][il] = L_th
+            res["err"][ic][il] = err
+
+            # 在线平均更新 by_load（对同一 load_factor 跨 corr 平均）
+            count = by_load_counts[mode][lf] + 1
+            by_load_counts[mode][lf] = count
+            prev_sim = res["by_load"][lf]["L_sim"]
+            prev_th = res["by_load"][lf]["L_theory"]
+            new_sim, new_th = by_load_inc
+            res["by_load"][lf]["L_sim"] = prev_sim + (new_sim - prev_sim) / count
+            res["by_load"][lf]["L_theory"] = prev_th + (new_th - prev_th) / count
 
     # 保存实验数据 (JSON + 每模式 arrays.npz)
     metadata = {
@@ -180,13 +243,15 @@ def main():
             title=f"理论 vs 仿真误差随利用率变化（{mode}）",
         )
 
-    # ACF 综合图一次性画即可（不依赖 per_mode exp_data 结构）
     from plot_corr_vs_acf import big_corr_vs_acf
     big_corr_vs_acf(levels=corr_levels, models=map_modes, out_dir=root_out)
 
     end_time = time.time()
     elapsed = end_time - start_time
-    print(f"[TIME][PARALLEL] Total experiment runtime: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes aka {elapsed/3600:.2f} hours)")
+    print(
+        f"[TIME][PARALLEL] Total experiment runtime: {elapsed:.2f} seconds "
+        f"({elapsed/60:.2f} minutes aka {elapsed/3600:.2f} hours)"
+    )
 
 
 if __name__ == "__main__":

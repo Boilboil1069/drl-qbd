@@ -312,7 +312,7 @@ def run_grid_experiment(
         # 则认为是异常（例如队长远超服务器数目数量级）。
         anomaly_factor = 10.0
         # DQN 在每个场景下的最多尝试次数
-        dqn_max_retries = 5
+        dqn_max_retries = 3
 
         def build_map(level):
             if one_mode == "base":
