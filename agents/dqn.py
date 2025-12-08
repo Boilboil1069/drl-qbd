@@ -164,10 +164,10 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
             burst_phases = []
 
     if prioritized:
-        buf = PrioritizedReplayBuffer(capacity=2000000, alpha=alpha, beta_start=beta_start,
+        buf = PrioritizedReplayBuffer(capacity=200000, alpha=alpha, beta_start=beta_start,
                                       burst_phases=burst_phases, burst_scale=burst_scale)
     else:
-        buf = ReplayBuffer(size=2000000)
+        buf = ReplayBuffer(size=200000)
 
     gamma = 0.99
     tau = 0.01
@@ -176,7 +176,7 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
     loss_history = []  # record per-episode mean loss
     start_time = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    train_interval = 4  # 新增：每 4 步训练一次
+    train_interval = 1  # 新增：每 4 步训练一次
     global_step = 0
 
     for ep in tqdm(range(episodes), desc="[DQN] Training"):

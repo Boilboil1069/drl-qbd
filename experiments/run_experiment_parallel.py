@@ -64,10 +64,10 @@ def main():
     load_factors = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3)
     mus = (4.5, 4.0, 3.5, 3.0)
 
-    horizon_time = 1500.0
+    horizon_time = 500.0
     train_episodes = 30
     eval_episodes = 5
-    routing_samples = 20000
+    routing_samples = 10000
     seed = 2024
     workers = 8
 
