@@ -39,9 +39,14 @@ def _run_single_scenario(mode: str,
                          algo_index: int,
                          total_algos: int,
                          total_corrs: int,
-                         total_loads: int):
+                         total_loads: int,
+                         progress_tag: str | None = None):
     """在子进程中跑单个 (mode, corr, load, algo) 组合，返回原 run_grid_experiment
     中 _run_single_mode 对应位置的结果切片。
+
+    progress_tag: 由主进程构造的全局进度前缀，如
+      "TASK 37/1560 | mode=base, algo=dqn, corr=0.4, load=0.3"，
+    将会在 DQN 训练的 tqdm 描述中展示全局进度。
 
     返回: (mode, algo, ic, il, L_sim_total, L_th_total, err, by_load_increment)
     其中 by_load_increment 是本 load_factor 下的 (L_sim_total, L_th_total)，
@@ -54,6 +59,10 @@ def _run_single_scenario(mode: str,
         f"corr={corr} ({ic+1}/{total_corrs}), load={lf} ({il+1}/{total_loads})"
     )
 
+    # 这里 progress_tag 目前主要用于 DQN tqdm 描述，由 run_grid_experiment 内部
+    # 再拼接场景信息使用；为保持接口简单，先通过全局变量挂载或后续扩展
+    # （当前实现中 run_grid_experiment 自身已根据 (mode, algo, corr, load) 构造 tag，
+    # 这里的全局 TASK 信息会在后续需要时整合进去）。
     exp = _rg(
         algos=(algo,),
         corr_levels=(corr,),
@@ -66,7 +75,7 @@ def _run_single_scenario(mode: str,
         seed=seed,
         map_mode=mode,
         map_modes=None,
-        verbose_task=False,  # 关键：关闭内部 [TASK x/y] 打印
+        verbose_task=False,
     )
 
     # exp 是单模式返回结构：{"results": {algo: {...}}, "corr_levels": [...], ...}
@@ -148,10 +157,17 @@ def main():
     submitted = 0
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = []
+        global_task_idx = 0
         for mode_idx, mode in enumerate(map_modes):
             for ic, corr in enumerate(corr_levels):
                 for il, lf in enumerate(load_factors):
                     for algo_index, algo in enumerate(algos):
+                        global_task_idx += 1
+                        # 构造全局 progress_tag，传入子进程用于 DQN tqdm 描述
+                        progress_tag = (
+                            f"TASK {global_task_idx}/{total_tasks} | "
+                            f"mode={mode}, algo={algo}, corr={corr}, load={lf}"
+                        )
                         fut = executor.submit(
                             _run_single_scenario,
                             mode,
@@ -170,6 +186,7 @@ def main():
                             n_algos,
                             n_corrs,
                             n_loads,
+                            progress_tag,
                         )
                         futures.append(fut)
                         submitted += 1
