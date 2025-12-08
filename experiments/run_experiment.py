@@ -364,12 +364,9 @@ def run_grid_experiment(
                         set_seed(cur_seed)
                         env.seed = cur_seed if hasattr(env, "seed") else None
 
-                        # 为 DQN 构造更丰富的进度条 tag，其它算法传 None
+                        # 为 DQN 构造进度条 tag：只展示场景信息，不再带 TASK x/y，避免在并行/单点场景下出现 1/1 误导
                         if algo == "dqn":
-                            tag = (
-                                f"TASK {task_idx_mode}/{total_tasks_mode} | "
-                                f"mode={one_mode}, algo={algo}, corr={corr}, load={lf}"
-                            )
+                            tag = f"mode={one_mode}, algo={algo}, corr={corr}, load={lf}"
                         else:
                             tag = None
 
