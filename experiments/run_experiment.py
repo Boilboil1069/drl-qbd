@@ -7,6 +7,7 @@ import time
 import numpy as np
 import torch
 
+# Ensure project root is on sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from utils.plotting import (
@@ -166,9 +167,8 @@ def select_action(policy_type, model, env, obs):
 # 策略训练统一入口
 # ============================================================
 
-def train_policy(env, algo_name, episodes=100):
-    """
-    统一训练接口：
+def train_policy(env, algo_name, episodes=100, progress_tag: str | None = None):
+    """统一训练接口：
       - random, jsq, pod2, jiq 都不训练（rule-based）
       - dqn / a2c / ppo / sac 会调用对应的 train_xxx
     """
@@ -178,7 +178,8 @@ def train_policy(env, algo_name, episodes=100):
 
     if algo_name == "dqn":
         print("[TRAIN] DQN ...")
-        model, info = train_dqn(env, episodes=episodes)
+        # 将当前实验信息通过 progress_tag 传给 tqdm 进度条
+        model, info = train_dqn(env, episodes=episodes, progress_tag=progress_tag)
         # Q-loss 绘图在主实验脚本 main() 中统一完成
         return model, info
 
@@ -325,12 +326,14 @@ def run_grid_experiment(
             raise ValueError(f"Unknown map_mode={one_mode}")
 
         mode_results = {}
+        # 预计算当前模式下的总实验组合数（用于 DQN 进度条 tag）
+        total_tasks_mode = len(corr_levels) * len(load_factors) * len(algos)
+        task_idx_mode = 0
         for algo in algos:
             mode_results[algo] = {
                 "L_sim": np.zeros((len(corr_levels), len(load_factors))),
                 "L_theory": np.zeros((len(corr_levels), len(load_factors))),
                 "err": np.zeros((len(corr_levels), len(load_factors))),
-                # 按负载聚合的一维结果：results_by_load[algo][load_factor] = {L_sim, L_theory}
                 "by_load": {lf: {"L_sim": 0.0, "L_theory": 0.0} for lf in load_factors},
             }
 
@@ -342,7 +345,8 @@ def run_grid_experiment(
                 D0_base, D1_base = build_map(corr)
                 D0, D1 = scale_load(D0_base, D1_base, factor=lf)
                 for algo in algos:
-                    print(f"\n--- 策略: {algo} ---")
+                    task_idx_mode += 1
+                    print(f"[TASK {task_idx_mode}/{total_tasks_mode}] 当前策略={algo}, map_mode={one_mode}, corr={corr}, load_factor={lf}")
                     env = ParallelQueueEnv(D0, D1, mus, horizon_time=horizon_time)
                     n_servers = len(mus)
 
@@ -352,7 +356,16 @@ def run_grid_experiment(
                         set_seed(cur_seed)
                         env.seed = cur_seed if hasattr(env, "seed") else None
 
-                        train_ret_inner = train_policy(env, algo, episodes=train_episodes)
+                        # 为 DQN 构造更丰富的进度条 tag，其它算法传 None
+                        if algo == "dqn":
+                            tag = (
+                                f"TASK {task_idx_mode}/{total_tasks_mode} | "
+                                f"mode={one_mode}, algo={algo}, corr={corr}, load={lf}"
+                            )
+                        else:
+                            tag = None
+
+                        train_ret_inner = train_policy(env, algo, episodes=train_episodes, progress_tag=tag)
                         if isinstance(train_ret_inner, tuple):
                             model_inner = train_ret_inner[0]
                         else:
@@ -456,7 +469,7 @@ def run_grid_experiment(
                             routing_probs,
                         ) = _train_and_eval_once(seed)
 
-                    print(f"  仿真平均队长 L_sim_vec={L_sim_vec}, sum={L_sim_total:.3f}")
+                    print(f"  仿��平均队长 L_sim_vec={L_sim_vec}, sum={L_sim_total:.3f}")
                     print(f"  路由概率矩阵 P_r(j):\n{routing_probs}")
                     print(f"  理论平均队长 L_theory_vec={L_th_vec}, sum={L_th_total:.3f}")
                     print(f"  误差 |L_theory - L_sim| = {err:.3f}")

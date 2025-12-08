@@ -136,11 +136,15 @@ class PrioritizedReplayBuffer:
 
 def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
               prioritized=True, alpha=0.6, beta_start=0.4, burst_quantile=0.75,
-              burst_scale=5.0):
+              burst_scale=5.0, progress_tag: str | None = None):
     """Train DQN agent.
 
     prioritized: if True, use prioritized replay emphasizing burst phases (high arrival intensity phases).
     burst phases determined by row-sum of env.D1 >= quantile(burst_quantile).
+
+    progress_tag: optional string shown in tqdm progress bar to indicate
+    the current experiment configuration, e.g. overall task index and
+    (map_mode, corr, load, algo) parameters.
     """
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
@@ -179,7 +183,13 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
     train_interval = 1  # 新增：每 4 步训练一次
     global_step = 0
 
-    for ep in tqdm(range(episodes), desc="[DQN] Training"):
+    # === new: build richer tqdm description with tag and episodes ===
+    if progress_tag:
+        desc = f"[DQN] {progress_tag} (episodes={episodes})"
+    else:
+        desc = f"[DQN] Training (episodes={episodes})"
+
+    for ep in tqdm(range(episodes), desc=desc):
         obs, _ = env.reset()
         done = False
         ep_ret = 0.0
@@ -202,7 +212,6 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
             if prioritized:
                 buf.push(obs, act, rew, obs2, done, phase)
             else:
-                # standard buffer stores only (s,a,r,s2,d)
                 buf.push(obs, act, rew, obs2, done)
             obs = obs2
             ep_ret += rew
@@ -260,14 +269,16 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
         else:
             loss_history.append(0.0)
 
-        if (ep + 1) % progress_interval == 0 or (ep + 1) == episodes:
-            tqdm.write(f"[DQN] Episode {ep + 1}/{episodes}, episode_return={ep_ret:.3f}")
+    info = {
+        "ep_rewards": ep_rewards,
+        "loss_history": loss_history,
+        "start_time": start_time,
+    }
 
-    # Delegate plotting to utils.plotting
+    # Plot training returns (optional helper)
     try:
         plot_dqn_training_returns(ep_rewards, out_dir=out_dir, timestamp=start_time)
     except Exception as e:
-        print(f"[DQN] Failed to save training plot: {e}")
+        print(f"[DQN][WARN] Failed to plot training returns: {e}")
 
-    info = {"loss_history": loss_history, "burst_phases": burst_phases, "prioritized": prioritized}
     return q, info

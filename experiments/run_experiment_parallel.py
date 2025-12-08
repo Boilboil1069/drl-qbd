@@ -35,11 +35,24 @@ def _run_single_mode_parallel(mode: str,
                               train_episodes: int,
                               eval_episodes: int,
                               routing_samples: int,
-                              seed: int):
+                              seed: int,
+                              total_tasks: int,
+                              mode_index: int,
+                              total_modes: int):
     """在子进程中跑单个 map_mode 的 run_grid_experiment。
 
     返回 (mode, exp_data_mode) 方便主进程汇总。
     """
+    print(f"[PARALLEL][MODE {mode_index+1}/{total_modes}] Start map_mode='{mode}'")
+    print(
+        f"[PARALLEL][MODE {mode}] 总实验组合数: {total_tasks} = "
+        f"len(corr_levels)={len(corr_levels)} × len(load_factors)={len(load_factors)} × len(algos)={len(algos)}"
+    )
+    print(
+        f"[PARALLEL][MODE {mode}] 关键训练参数: horizon_time={horizon_time}, "
+        f"train_episodes={train_episodes}, eval_episodes={eval_episodes}, routing_samples={routing_samples}, seed={seed}"
+    )
+
     exp_data_mode = run_grid_experiment(
         algos=algos,
         corr_levels=corr_levels,
@@ -73,6 +86,10 @@ def main():
 
     map_modes = ("base", "hawkes", "super_burst")
 
+    # 计算总实验组合数量，用于打印
+    total_tasks = len(corr_levels) * len(load_factors) * len(algos)
+    total_modes = len(map_modes)
+
     base_fig_dir = "figures"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     root_out = os.path.join(base_fig_dir, timestamp)
@@ -80,6 +97,13 @@ def main():
 
     print("#" * 80)
     print("[PARALLEL] Start parallel grid experiment for modes:", map_modes)
+    print(
+        f"[PARALLEL] 全局总实验组合数: {total_modes} × {total_tasks} = {total_modes * total_tasks}"
+    )
+    print(
+        f"[PARALLEL] 全局关键训练参数: horizon_time={horizon_time}, train_episodes={train_episodes}, "
+        f"eval_episodes={eval_episodes}, routing_samples={routing_samples}, seed={seed}"
+    )
     print("#" * 80)
 
     per_mode_results = {}
@@ -87,7 +111,7 @@ def main():
     # 并行跑每个 map_mode
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = []
-        for mode in map_modes:
+        for idx, mode in enumerate(map_modes):
             fut = executor.submit(
                 _run_single_mode_parallel,
                 mode,
@@ -100,6 +124,9 @@ def main():
                 eval_episodes,
                 routing_samples,
                 seed,
+                total_tasks,
+                idx,
+                total_modes,
             )
             futures.append(fut)
 
