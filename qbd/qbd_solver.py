@@ -251,7 +251,7 @@ def mean_queue_length_from_pi(pi, m, K_max):
     L = 0.0
     for k in range(K_max + 1):
         # level k 的概率质量
-        level_slice = pi[k * m : (k + 1) * m]
+        level_slice = pi[k * m: (k + 1) * m]
         pk = np.sum(level_slice)
         L += k * pk
     return float(L)

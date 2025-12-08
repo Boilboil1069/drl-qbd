@@ -69,6 +69,7 @@ class PrioritizedReplayBuffer:
     After a training step updating TD errors, new priority = |td_error| + eps.
     To keep burst emphasis, we multiply by burst_scale again if phase is burst.
     """
+
     def __init__(self, capacity=50000, alpha=0.6, beta_start=0.4, beta_frames=100000,
                  burst_phases=None, burst_scale=5.0, eps=1e-6):
         self.capacity = capacity

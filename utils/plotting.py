@@ -75,8 +75,8 @@ def configure_matplotlib_for_chinese():
             mpl.rcParams["font.family"] = "sans-serif"
 
         # Improve PDF/SVG output so fonts are embedded/retained
-        mpl.rcParams["pdf.fonttype"] = 42   # use TrueType fonts in PDFs
-        mpl.rcParams["ps.fonttype"] = 42    # use TrueType for PS
+        mpl.rcParams["pdf.fonttype"] = 42  # use TrueType fonts in PDFs
+        mpl.rcParams["ps.fonttype"] = 42  # use TrueType for PS
         mpl.rcParams["svg.fonttype"] = "none"
         mpl.rcParams["axes.unicode_minus"] = True
 
@@ -104,7 +104,8 @@ def configure_matplotlib_for_chinese():
                 sample_char = "队"  # just a common CJK character for probing
                 fp = FontProperties(family=chosen_list[0])
                 _ = fm.findfont(fp, fallback_to_default=True)
-                print(f"[MATPLOTLIB] primary CJK font candidate='{chosen_list[0]}' should cover '{sample_char}' if glyph exists.")
+                print(
+                    f"[MATPLOTLIB] primary CJK font candidate='{chosen_list[0]}' should cover '{sample_char}' if glyph exists.")
             except Exception as _e:
                 print(f"[MATPLOTLIB] warning: primary CJK font '{chosen_list[0]}' lookup error: {_e}")
     except Exception as e:
