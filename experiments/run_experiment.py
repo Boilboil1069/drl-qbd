@@ -275,6 +275,7 @@ def run_grid_experiment(
         seed=2024,
         map_mode="base",      # 单模式（向后兼容）
         map_modes=None,        # 若提供序列，将对每个模式运行并汇总
+        verbose_task: bool = True,  # 新增：是否打印 [TASK x/y] 进度日志
 ):
     """
     在 (相关性 × 负载) 网格上跑所有策略，并记录：
@@ -291,6 +292,9 @@ def run_grid_experiment(
     1) 单模式：传入 map_mode（默认 "base"），返回与旧版本兼容的结果结构。
     2) 多模式：传入 map_modes 序列（如 ("base","mmpp2","hawkes","super_burst")），忽略单个 map_mode，
        对每个模式分别跑网格，返回 {"multi": True, "per_mode": {mode: 单模式结果结构}, ...}。
+
+    verbose_task: 若为 True，则在每个 (corr, load, algo) 组合上打印 [TASK i/total] 进度；
+                  并行 worker 复用本函数时可将其置为 False，避免子进程里出现 1/1 这类误导性进度。
     """
     set_seed(seed)
     corr_levels = list(corr_levels)
@@ -298,7 +302,7 @@ def run_grid_experiment(
     mus = np.array(mus, dtype=float)
 
     # ---------------- internal: run one mode -----------------
-    def _run_single_mode(one_mode:str):
+    def _run_single_mode(one_mode: str):
         # 为了防止 DQN 在某些随机种子下出现极端异常的大队长值
         # 我们在每个 (corr, load_factor, algo) 组合上对 DQN 做多次重试：
         #   - 初始使用全局 seed
@@ -326,7 +330,7 @@ def run_grid_experiment(
             raise ValueError(f"Unknown map_mode={one_mode}")
 
         mode_results = {}
-        # 预计算当前模式下的总实验组合数（用于 DQN 进度条 tag）
+        # 预估当前模式下的总实验组合数（用于 DQN 进度条 tag）
         total_tasks_mode = len(corr_levels) * len(load_factors) * len(algos)
         task_idx_mode = 0
         for algo in algos:
@@ -346,7 +350,11 @@ def run_grid_experiment(
                 D0, D1 = scale_load(D0_base, D1_base, factor=lf)
                 for algo in algos:
                     task_idx_mode += 1
-                    print(f"[TASK {task_idx_mode}/{total_tasks_mode}] 当前策略={algo}, map_mode={one_mode}, corr={corr}, load_factor={lf}")
+                    if verbose_task:
+                        print(
+                            f"[TASK {task_idx_mode}/{total_tasks_mode}] 当前策略={algo}, "
+                            f"map_mode={one_mode}, corr={corr}, load_factor={lf}"
+                        )
                     env = ParallelQueueEnv(D0, D1, mus, horizon_time=horizon_time)
                     n_servers = len(mus)
 

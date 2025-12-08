@@ -6,9 +6,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from experiments.run_experiment import (
-    run_grid_experiment,
-)
+# 不直接在顶层导入 run_grid_experiment，避免循环依赖和未使用告警
 from utils.plotting import (
     configure_matplotlib_for_chinese,
     ensure_dir,
@@ -50,12 +48,12 @@ def _run_single_scenario(mode: str,
     供主进程做在线平均聚合。
     """
     from experiments.run_experiment import run_grid_experiment as _rg
+    # 子进程只打印简单 worker 信息，不再使用 [TASK x/y] 语义，避免 1/1 误导
     print(
         f"[WORKER] mode={mode}, algo={algo} ({algo_index+1}/{total_algos}), "
         f"corr={corr} ({ic+1}/{total_corrs}), load={lf} ({il+1}/{total_loads})"
     )
 
-    # 复用单场景逻辑：只跑单一 (corr, load) 和单一 algo
     exp = _rg(
         algos=(algo,),
         corr_levels=(corr,),
@@ -68,6 +66,7 @@ def _run_single_scenario(mode: str,
         seed=seed,
         map_mode=mode,
         map_modes=None,
+        verbose_task=False,  # 关键：关闭内部 [TASK x/y] 打印
     )
 
     # exp 是单模式返回结构：{"results": {algo: {...}}, "corr_levels": [...], ...}
@@ -180,7 +179,8 @@ def main():
         for i, fut in enumerate(as_completed(futures), start=1):
             mode, algo, ic, il, L_sim, L_th, err, lf, by_load_inc = fut.result()
             print(
-                f"[COLLECT] {i}/{submitted}: mode={mode}, algo={algo}, ic={ic}, il={il}, "
+                f"[TASK {i}/{submitted}] 当前策略={algo}, map_mode={mode}, "
+                f"corr={corr_levels[ic]}, load_factor={load_factors[il]} | "
                 f"L_sim={L_sim:.3f}, L_th={L_th:.3f}, err={err:.3f}"
             )
 
