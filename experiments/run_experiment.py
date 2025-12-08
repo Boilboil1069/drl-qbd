@@ -477,7 +477,7 @@ def run_grid_experiment(
                             routing_probs,
                         ) = _train_and_eval_once(seed)
 
-                    print(f"  仿��平均队长 L_sim_vec={L_sim_vec}, sum={L_sim_total:.3f}")
+                    print(f"  仿真平均队长 L_sim_vec={L_sim_vec}, sum={L_sim_total:.3f}")
                     print(f"  路由概率矩阵 P_r(j):\n{routing_probs}")
                     print(f"  理论平均队长 L_theory_vec={L_th_vec}, sum={L_th_total:.3f}")
                     print(f"  误差 |L_theory - L_sim| = {err:.3f}")

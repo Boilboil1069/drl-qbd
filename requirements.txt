@@ -1,0 +1,10 @@
+numpy>=1.26
+matplotlib>=3.8
+torch>=2.3
+# OpenAI Gymnasium for RL environments
+gymnasium>=0.29
+# Discrete-event simulation backend used by env.parallel_queue_env
+simpy>=4.1
+# Progress bars used conditionally in training loops
+tqdm>=4.66
+
