@@ -208,7 +208,7 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
             ep_ret += rew
 
             # Training step
-            if len(buf) >= 64 and global_step % train_interval == 0:  # wait until minimal batch size reached
+            if len(buf) >= 256 and global_step % train_interval == 0:  # wait until minimal batch size reached
                 if prioritized:
                     s, a, r, s2, d, ph, idxs, w = buf.sample(64)
                 else:
