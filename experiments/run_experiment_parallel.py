@@ -4,6 +4,8 @@ from datetime import datetime
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import numpy as np  # 新增：用于将嵌套 list 转成 ndarray
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # 不直接在顶层导入 run_grid_experiment，避免循环依赖和未使用告警
@@ -207,7 +209,7 @@ def main():
             res["L_theory"][ic][il] = L_th
             res["err"][ic][il] = err
 
-            # 在线平均更新 by_load（对同一 load_factor 跨 corr 平均）
+            # 在线���均更新 by_load（对同一 load_factor 跨 corr 平均）
             count = by_load_counts[mode][lf] + 1
             by_load_counts[mode][lf] = count
             prev_sim = res["by_load"][lf]["L_sim"]
@@ -230,6 +232,19 @@ def main():
         "map_modes": map_modes,
         "timestamp": timestamp,
     }
+
+    # 在保存和绘图前，先把每个 algo 的 L_sim/L_theory/err 从嵌套 list 转成 numpy 数组，
+    # 以保持与串行 run_experiment 返回结构一致，便于 plotting 代码使用切片 L_sim[ic, :]
+    for mode in map_modes:
+        mode_res = per_mode_results[mode]["results"]
+        for algo in algos:
+            if algo not in mode_res:
+                continue
+            arrs = mode_res[algo]
+            for key in ("L_sim", "L_theory", "err"):
+                if isinstance(arrs.get(key), list):
+                    arrs[key] = np.array(arrs[key], dtype=float)
+
     json_saved_path = save_experiment_data(per_mode_results, root_out, metadata)
     print(f"[DATA] Experiment data saved to {json_saved_path}")
 
