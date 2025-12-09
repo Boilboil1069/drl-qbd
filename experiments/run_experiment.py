@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime
 import time
+import argparse
 
 import numpy as np
 import torch
@@ -167,20 +168,27 @@ def select_action(policy_type, model, env, obs):
 # 策略训练统一入口
 # ============================================================
 
-def train_policy(env, algo_name, episodes=100, progress_tag: str | None = None):
+def train_policy(env, algo_name, episodes=100, progress_tag: str | None = None,
+                 net_type: str = "dueling"):
     """统一训练接口：
       - random, jsq, pod2, jiq 都不训练（rule-based）
       - dqn / a2c / ppo / sac 会调用对应的 train_xxx
+
+    net_type: 仅对 DQN 有效，"mlp" 使用原始浅层网络，"dueling" 使用更深的 Dueling+LayerNorm 网络。
     """
     if algo_name in ["random", "jsq", "pod2", "jiq", "lw", "lc", "rr"]:
         print(f"[TRAIN] {algo_name}: rule-based，无需训练")
         return None
 
     if algo_name == "dqn":
-        print("[TRAIN] DQN ...")
+        print(f"[TRAIN] DQN (net_type={net_type}) ...")
         # 将当前实验信息通过 progress_tag 传给 tqdm 进度条
-        model, info = train_dqn(env, episodes=episodes, progress_tag=progress_tag)
-        # Q-loss 绘图在主实验脚本 main() 中统一完成
+        model, info = train_dqn(
+            env,
+            episodes=episodes,
+            progress_tag=progress_tag,
+            net_type=net_type,
+        )
         return model, info
 
     if algo_name == "a2c":
@@ -376,7 +384,13 @@ def run_grid_experiment(
                         else:
                             tag = None
 
-                        train_ret_inner = train_policy(env, algo, episodes=train_episodes, progress_tag=tag)
+                        train_ret_inner = train_policy(
+                            env,
+                            algo,
+                            episodes=train_episodes,
+                            progress_tag=tag,
+                            net_type=args.net if "args" in globals() else "dueling",
+                        )
                         if isinstance(train_ret_inner, tuple):
                             model_inner = train_ret_inner[0]
                         else:
@@ -531,6 +545,18 @@ def run_grid_experiment(
 # ============================================================
 
 def main():
+    parser = argparse.ArgumentParser(description="Run DRL vs baseline queueing experiments")
+    parser.add_argument(
+        "--net",
+        type=str,
+        default="dueling",
+        choices=["mlp", "dueling"],
+        help="Q-network architecture for DQN: 'mlp' for shallow MLP, 'dueling' for deeper Dueling+LayerNorm",
+    )
+    # You may have other CLI args; keep them here if present
+    global args
+    args, _ = parser.parse_known_args()
+
     start_time = time.time()
     algos = ("random", "jsq", "jiq", "pod2", "lw", "lc", "rr", "dqn")
     corr_levels = (0.25, 0.5, 0.75, 1.0)

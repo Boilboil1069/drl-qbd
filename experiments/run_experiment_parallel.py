@@ -3,6 +3,7 @@ import sys
 from datetime import datetime
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import argparse
 
 import numpy as np  # 新增：用于将嵌套 list 转成 ndarray
 
@@ -43,7 +44,8 @@ def _run_single_scenario(mode: str,
                          total_algos: int,
                          total_corrs: int,
                          total_loads: int,
-                         progress_tag: str | None = None):
+                         progress_tag: str | None = None,
+                         net_type: str = "dueling"):
     """在子进程中跑单个 (mode, corr, load, algo) 组合，返回原 run_grid_experiment
     中 _run_single_mode 对应位置的结果切片。
 
@@ -130,6 +132,16 @@ def _run_single_scenario(mode: str,
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Fine-grained parallel grid experiment")
+    parser.add_argument(
+        "--net",
+        type=str,
+        default="dueling",
+        choices=["mlp", "dueling"],
+        help="Q-network architecture for DQN: 'mlp' or 'dueling'",
+    )
+    args, _ = parser.parse_known_args()
+
     """更细粒度并行版本：每个 (mode, corr, load, algo) 组合独立子进程。
 
     注意：总组合数较大时要适当调小 workers，以避免 CPU 过载或显存争用。
@@ -232,6 +244,7 @@ def main():
                             n_corrs,
                             n_loads,
                             progress_tag,
+                            args.net,
                         )
                         futures.append(fut)
                         submitted += 1

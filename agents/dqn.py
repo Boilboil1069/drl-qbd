@@ -37,6 +37,91 @@ class MLP(nn.Module):
         return self.net(x)
 
 
+class ResidualBlock(nn.Module):
+    """Simple residual block with two Linear+LayerNorm+ReLU layers.
+
+    Input/Output shape: [batch, hidden]
+    """
+
+    def __init__(self, hidden: int):
+        super().__init__()
+        self.fc1 = nn.Linear(hidden, hidden)
+        self.ln1 = nn.LayerNorm(hidden)
+        self.fc2 = nn.Linear(hidden, hidden)
+        self.ln2 = nn.LayerNorm(hidden)
+        self.relu = nn.ReLU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        out = self.fc1(x)
+        out = self.ln1(out)
+        out = self.relu(out)
+        out = self.fc2(out)
+        out = self.ln2(out)
+        out = out + residual
+        out = self.relu(out)
+        return out
+
+
+class DuelingMLP(nn.Module):
+    """Deeper dueling network with LayerNorm and residual blocks for stability.
+
+    Input:  [batch, obs_dim]
+    Output: [batch, act_dim] Q-values
+    """
+
+    def __init__(self, obs_dim, act_dim, hidden: int = 128, n_res_blocks: int = 2):
+        super().__init__()
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.hidden = hidden
+
+        # input projection
+        self.fc_in = nn.Linear(obs_dim, hidden)
+        self.ln_in = nn.LayerNorm(hidden)
+        self.relu = nn.ReLU()
+
+        # residual stack on shared features
+        self.res_blocks = nn.ModuleList([ResidualBlock(hidden) for _ in range(n_res_blocks)])
+
+        # optional final shared layer before heads
+        self.fc_shared_out = nn.Linear(hidden, hidden)
+        self.ln_shared_out = nn.LayerNorm(hidden)
+
+        # value stream
+        self.value_fc = nn.Linear(hidden, hidden)
+        self.value_out = nn.Linear(hidden, 1)
+
+        # advantage stream
+        self.adv_fc = nn.Linear(hidden, hidden)
+        self.adv_out = nn.Linear(hidden, act_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+
+        h = self.fc_in(x)
+        h = self.ln_in(h)
+        h = self.relu(h)
+
+        for block in self.res_blocks:
+            h = block(h)
+
+        h = self.fc_shared_out(h)
+        h = self.ln_shared_out(h)
+        h = self.relu(h)
+
+        v = self.relu(self.value_fc(h))
+        v = self.value_out(v)  # [B, 1]
+
+        a = self.relu(self.adv_fc(h))
+        a = self.adv_out(a)  # [B, A]
+
+        a_mean = a.mean(dim=1, keepdim=True)
+        q = v + a - a_mean
+        return q
+
+
 class ReplayBuffer:
     def __init__(self, size=50000):
         self.size = size
@@ -137,7 +222,8 @@ class PrioritizedReplayBuffer:
 
 def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
               prioritized=True, alpha=0.6, beta_start=0.4, burst_quantile=0.75,
-              burst_scale=5.0, progress_tag: str | None = None):
+              burst_scale=5.0, progress_tag: str | None = None,
+              net_type: str = "dueling"):
     """Train DQN agent.
 
     prioritized: if True, use prioritized replay emphasizing burst phases (high arrival intensity phases).
@@ -146,12 +232,20 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
     progress_tag: optional string shown in tqdm progress bar to indicate
     the current experiment configuration, e.g. overall task index and
     (map_mode, corr, load, algo) parameters.
+
+    net_type: "mlp" for original shallow MLP, "dueling" for deeper dueling network.
     """
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
 
-    q = MLP(obs_dim, act_dim).to(device)
-    q_t = MLP(obs_dim, act_dim).to(device)
+    if net_type == "mlp":
+        q = MLP(obs_dim, act_dim).to(device)
+        q_t = MLP(obs_dim, act_dim).to(device)
+    else:
+        # default to dueling network
+        q = DuelingMLP(obs_dim, act_dim).to(device)
+        q_t = DuelingMLP(obs_dim, act_dim).to(device)
+
     q_t.load_state_dict(q.state_dict())
 
     opt = optim.Adam(q.parameters(), lr=1e-3)
