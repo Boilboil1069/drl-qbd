@@ -31,7 +31,8 @@ def _run_single_scenario(mode: str,
                          corr: float,
                          lf: float,
                          mus,
-                         horizon_time: float,
+                         horizon_train: float,
+                         horizon_eval: float,
                          train_episodes: int,
                          eval_episodes: int,
                          routing_samples: int,
@@ -65,21 +66,58 @@ def _run_single_scenario(mode: str,
     # 再拼接场景信息使用；为保持接口简单，先通过全局变量挂载或后续扩展
     # （当前实现中 run_grid_experiment 自身已根据 (mode, algo, corr, load) 构造 tag，
     # 这里的全局 TASK 信息会在后续需要时整合进去）。
-    exp = _rg(
-        algos=(algo,),
-        corr_levels=(corr,),
-        load_factors=(lf,),
-        mus=mus,
-        horizon_time=horizon_time,
-        train_episodes=train_episodes,
-        eval_episodes=eval_episodes,
-        routing_samples=routing_samples,
-        seed=seed,
-        map_mode=mode,
-        map_modes=None,
-        verbose_task=False,
-        global_progress_tag=progress_tag,
-    )
+    # For DQN: do a short-horizon training phase (faster), then a long-horizon
+    # evaluation phase to compute stable metrics. For other algos, run only the
+    # evaluation horizon (no extra fast training step here).
+    if algo == "dqn":
+        # training phase (no evaluation during this call)
+        _rg(
+            algos=(algo,),
+            corr_levels=(corr,),
+            load_factors=(lf,),
+            mus=mus,
+            horizon_time=horizon_train,
+            train_episodes=train_episodes,
+            eval_episodes=0,
+            routing_samples=routing_samples,
+            seed=seed,
+            map_mode=mode,
+            map_modes=None,
+            verbose_task=False,
+            global_progress_tag=progress_tag,
+        )
+        # evaluation phase (no further training)
+        exp = _rg(
+            algos=(algo,),
+            corr_levels=(corr,),
+            load_factors=(lf,),
+            mus=mus,
+            horizon_time=horizon_eval,
+            train_episodes=0,
+            eval_episodes=eval_episodes,
+            routing_samples=routing_samples,
+            seed=seed,
+            map_mode=mode,
+            map_modes=None,
+            verbose_task=False,
+            global_progress_tag=progress_tag,
+        )
+    else:
+        exp = _rg(
+            algos=(algo,),
+            corr_levels=(corr,),
+            load_factors=(lf,),
+            mus=mus,
+            horizon_time=horizon_eval,
+            train_episodes=train_episodes,
+            eval_episodes=eval_episodes,
+            routing_samples=routing_samples,
+            seed=seed,
+            map_mode=mode,
+            map_modes=None,
+            verbose_task=False,
+            global_progress_tag=progress_tag,
+        )
 
     # exp 是单模式返回结构：{"results": {algo: {...}}, "corr_levels": [...], ...}
     res_algo = exp["results"][algo]
@@ -102,7 +140,10 @@ def main():
     load_factors = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3)
     mus = (4.0, 4.0, 4.0, 4.0)
 
-    horizon_time = 500.0
+    # Use separate horizons: shorter for training (to speed up DQN updates),
+    # longer for evaluation (to get stable final metrics)
+    horizon_train = 500.0
+    horizon_eval = 1000.0
     train_episodes = 30
     eval_episodes = 5
     routing_samples = 10000
@@ -128,7 +169,7 @@ def main():
         f"[PARALLEL] 总实验组合数: modes={n_modes} × corrs={n_corrs} × loads={n_loads} × algos={n_algos} = {total_tasks}"
     )
     print(
-        f"[PARALLEL] 关键训练参数: horizon_time={horizon_time}, train_episodes={train_episodes}, "
+        f"[PARALLEL] 关键训练参数: horizon_time={horizon_train}, train_episodes={train_episodes}, "
         f"eval_episodes={eval_episodes}, routing_samples={routing_samples}, seed={seed}"
     )
     print("#" * 80)
@@ -178,7 +219,8 @@ def main():
                             float(corr),
                             float(lf),
                             mus,
-                            horizon_time,
+                            horizon_train,
+                            horizon_eval,
                             train_episodes,
                             eval_episodes,
                             routing_samples,
@@ -209,7 +251,7 @@ def main():
             res["L_theory"][ic][il] = L_th
             res["err"][ic][il] = err
 
-            # 在线���均更新 by_load（对同一 load_factor 跨 corr 平均）
+            # 在线平均更新 by_load（对同一 load_factor 跨 corr 平均）
             count = by_load_counts[mode][lf] + 1
             by_load_counts[mode][lf] = count
             prev_sim = res["by_load"][lf]["L_sim"]
@@ -224,7 +266,8 @@ def main():
         "corr_levels": corr_levels,
         "load_factors": load_factors,
         "mus": mus,
-        "horizon_time": horizon_time,
+        "horizon_train": horizon_train,
+        "horizon_eval": horizon_eval,
         "train_episodes": train_episodes,
         "eval_episodes": eval_episodes,
         "routing_samples": routing_samples,
