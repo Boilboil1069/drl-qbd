@@ -211,9 +211,15 @@ def train_policy(env, algo_name, episodes=100, progress_tag: str | None = None,
 # 仿真评估 + 路由概率估计
 # ============================================================
 
-def evaluate_policy(env, policy_type, model, episodes=5):
-    """
-    多次仿真，估计平均队长向量 L_sim (对每条队列)
+def evaluate_policy(env, policy_type, model, episodes=5, use_time_avg: bool = True):
+    """多次仿真，估计平均队长向量 L_sim (对每条队列).
+
+    参数
+    ------
+    use_time_avg : bool, default True
+        如果为 True，则使用环境提供的时间平均队长 `get_time_avg_stats()`，
+        更贴近 QBD 理论的稳态时间平均定义；
+        若为 False，则退回旧版按事件计数的 `get_stats()`，仅用于兼容早期实验。
     """
     # 若不需要评估（episodes <= 0），直接返回零向量，避免产生 NaN
     if episodes <= 0:
@@ -228,7 +234,10 @@ def evaluate_policy(env, policy_type, model, episodes=5):
             act = select_action(policy_type, model, env, obs)
             obs, rew, done, _, info = env.step(act)
 
-        L_vec, arrivals = env.get_stats()
+        if use_time_avg and hasattr(env, "get_time_avg_stats"):
+            L_vec, arrivals = env.get_time_avg_stats()
+        else:
+            L_vec, arrivals = env.get_stats()
         all_L.append(L_vec)
 
     # 使用 nanmean 以防个别 episode 数值异常导致 NaN 污染整体结果
