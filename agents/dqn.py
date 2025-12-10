@@ -25,101 +25,17 @@ from utils.plotting import plot_dqn_training_returns
 
 
 class MLP(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden=128):
+    def __init__(self, obs_dim, act_dim, hidden=512):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(obs_dim, hidden), nn.ReLU(),
+            nn.Linear(hidden,  hidden), nn.ReLU(),
             nn.Linear(hidden, hidden), nn.ReLU(),
             nn.Linear(hidden, act_dim)
         )
 
     def forward(self, x):
         return self.net(x)
-
-
-class ResidualBlock(nn.Module):
-    """Simple residual block with two Linear+LayerNorm+ReLU layers.
-
-    Input/Output shape: [batch, hidden]
-    """
-
-    def __init__(self, hidden: int):
-        super().__init__()
-        self.fc1 = nn.Linear(hidden, hidden)
-        self.ln1 = nn.LayerNorm(hidden)
-        self.fc2 = nn.Linear(hidden, hidden)
-        self.ln2 = nn.LayerNorm(hidden)
-        self.relu = nn.ReLU()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        residual = x
-        out = self.fc1(x)
-        out = self.ln1(out)
-        out = self.relu(out)
-        out = self.fc2(out)
-        out = self.ln2(out)
-        out = out + residual
-        out = self.relu(out)
-        return out
-
-
-class DuelingMLP(nn.Module):
-    """Deeper dueling network with LayerNorm and residual blocks for stability.
-
-    Input:  [batch, obs_dim]
-    Output: [batch, act_dim] Q-values
-    """
-
-    def __init__(self, obs_dim, act_dim, hidden: int = 128, n_res_blocks: int = 2):
-        super().__init__()
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
-        self.hidden = hidden
-
-        # input projection
-        self.fc_in = nn.Linear(obs_dim, hidden)
-        self.ln_in = nn.LayerNorm(hidden)
-        self.relu = nn.ReLU()
-
-        # residual stack on shared features
-        self.res_blocks = nn.ModuleList([ResidualBlock(hidden) for _ in range(n_res_blocks)])
-
-        # optional final shared layer before heads
-        self.fc_shared_out = nn.Linear(hidden, hidden)
-        self.ln_shared_out = nn.LayerNorm(hidden)
-
-        # value stream
-        self.value_fc = nn.Linear(hidden, hidden)
-        self.value_out = nn.Linear(hidden, 1)
-
-        # advantage stream
-        self.adv_fc = nn.Linear(hidden, hidden)
-        self.adv_out = nn.Linear(hidden, act_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.dim() == 1:
-            x = x.unsqueeze(0)
-
-        h = self.fc_in(x)
-        h = self.ln_in(h)
-        h = self.relu(h)
-
-        for block in self.res_blocks:
-            h = block(h)
-
-        h = self.fc_shared_out(h)
-        h = self.ln_shared_out(h)
-        h = self.relu(h)
-
-        v = self.relu(self.value_fc(h))
-        v = self.value_out(v)  # [B, 1]
-
-        a = self.relu(self.adv_fc(h))
-        a = self.adv_out(a)  # [B, A]
-
-        a_mean = a.mean(dim=1, keepdim=True)
-        q = v + a - a_mean
-        return q
 
 
 class ReplayBuffer:
@@ -221,8 +137,8 @@ class PrioritizedReplayBuffer:
 
 
 def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
-              prioritized=True, alpha=0.6, beta_start=0.4, burst_quantile=0.75,
-              burst_scale=5.0, progress_tag: str | None = None,
+              prioritized=True, alpha=0.6, beta_start=0.4, burst_quantile=0.5,
+              burst_scale=2.0, progress_tag: str | None = None,
               net_type: str | None = None):
     """Train DQN agent.
 
@@ -271,7 +187,7 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
     loss_history = []  # record per-episode mean loss
     start_time = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    train_interval = 1  # 新增：每 4 步训练一次
+    train_interval = 1
     global_step = 0
 
     # === new: build richer tqdm description with tag and episodes ===
@@ -290,7 +206,11 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
         while not done:
             steps += 1
             global_step += 1
-            eps = max(0.05, 0.5 - ep / episodes)
+
+            # 线性退火 epsilon: 从 1.0 降到 0.1，按 episode 进度
+            eps_start, eps_end = 1.0, 0.1
+            frac = ep / max(1, episodes - 1)
+            eps = max(eps_end, eps_start + (eps_end - eps_start) * frac)
             if random.random() < eps:
                 act = env.action_space.sample()
             else:
@@ -307,8 +227,9 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
             obs = obs2
             ep_ret += rew
 
-            # Training step
-            if len(buf) >= 256 and global_step % train_interval == 0:  # wait until minimal batch size reached
+            # Training step with warmup: 先收集足够多的经验再开始更新
+            warmup_steps = 2000
+            if len(buf) >= 256 and global_step >= warmup_steps and global_step % train_interval == 0:
                 if prioritized:
                     s, a, r, s2, d, ph, idxs, w = buf.sample(64)
                 else:
@@ -342,6 +263,8 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
 
                 opt.zero_grad()
                 loss.backward()
+                # 梯度裁剪，提升数值稳定性
+                torch.nn.utils.clip_grad_norm_(q.parameters(), max_norm=5.0)
                 opt.step()
 
                 if prioritized:

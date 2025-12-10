@@ -215,6 +215,10 @@ def evaluate_policy(env, policy_type, model, episodes=5):
     """
     多次仿真，估计平均队长向量 L_sim (对每条队列)
     """
+    # 若不需要评估（episodes <= 0），直接返回零向量，避免产生 NaN
+    if episodes <= 0:
+        return np.zeros(env.n, dtype=float)
+
     all_L = []
 
     for ep in range(episodes):
@@ -227,7 +231,9 @@ def evaluate_policy(env, policy_type, model, episodes=5):
         L_vec, arrivals = env.get_stats()
         all_L.append(L_vec)
 
-    return np.mean(np.array(all_L), axis=0)
+    # 使用 nanmean 以防个别 episode 数值异常导致 NaN 污染整体结果
+    all_L_arr = np.array(all_L, dtype=float)
+    return np.nanmean(all_L_arr, axis=0)
 
 
 def estimate_routing_probs(env, policy_type, model, num_samples=2000):

@@ -156,7 +156,7 @@ def main():
     # longer for evaluation (to get stable final metrics)
     horizon_train = 500.0
     horizon_eval = 1000.0
-    train_episodes = 30
+    train_episodes = 64
     eval_episodes = 5
     routing_samples = 10000
     seed = 2024
