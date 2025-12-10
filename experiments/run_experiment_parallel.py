@@ -149,8 +149,8 @@ def main():
     algos = ("random", "jsq", "jiq", "pod2", "lw", "lc", "rr", "dqn")
     corr_levels = (0.2, 0.4, 0.6, 0.8, 1.0)
     load_factors = (0.1, 0.3, 0.5, 0.7, 0.9, 1.1, 1.3)
-    # mus = (4.5, 4.0, 3.5, 3.0)
-    mus = (4.0, 4.0, 4.0, 4.0)
+    mus = (4.5, 4.0, 3.5, 3.0)
+    # mus = (4.0, 4.0, 4.0, 4.0)
 
     # Use separate horizons: shorter for training (to speed up DQN updates),
     # longer for evaluation (to get stable final metrics)
