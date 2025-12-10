@@ -169,25 +169,26 @@ def select_action(policy_type, model, env, obs):
 # ============================================================
 
 def train_policy(env, algo_name, episodes=100, progress_tag: str | None = None,
-                 net_type: str = "dueling"):
+                 net_type: str | None = None):
     """统一训练接口：
       - random, jsq, pod2, jiq 都不训练（rule-based）
       - dqn / a2c / ppo / sac 会调用对应的 train_xxx
 
-    net_type: 仅对 DQN 有效，"mlp" 使用原始浅层网络，"dueling" 使用更深的 Dueling+LayerNorm 网络。
+    net_type: 为向后兼容保留，但当前实现统一使用非 dueling 的普通 MLP。
     """
     if algo_name in ["random", "jsq", "pod2", "jiq", "lw", "lc", "rr"]:
         print(f"[TRAIN] {algo_name}: rule-based，无需训练")
         return None
 
     if algo_name == "dqn":
-        print(f"[TRAIN] DQN (net_type={net_type}) ...")
+        # 当前强制使用普通 MLP，不启用 dueling；这里打印也固定为 mlp 以免误导
+        print("[TRAIN] DQN (net_type=mlp, dueling=OFF) ...")
         # 将当前实验信息通过 progress_tag 传给 tqdm 进度条
         model, info = train_dqn(
             env,
             episodes=episodes,
             progress_tag=progress_tag,
-            net_type=net_type,
+            net_type=None,
         )
         return model, info
 

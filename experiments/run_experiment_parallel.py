@@ -44,8 +44,7 @@ def _run_single_scenario(mode: str,
                          total_algos: int,
                          total_corrs: int,
                          total_loads: int,
-                         progress_tag: str | None = None,
-                         net_type: str = "dueling"):
+                         progress_tag: str | None = None):
     """在子进程中跑单个 (mode, corr, load, algo) 组合，返回原 run_grid_experiment
     中 _run_single_mode 对应位置的结果切片。
 
@@ -150,6 +149,7 @@ def main():
     algos = ("random", "jsq", "jiq", "pod2", "lw", "lc", "rr", "dqn")
     corr_levels = (0.2, 0.4, 0.6, 0.8, 1.0)
     load_factors = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3)
+    # mus = (4.5, 4.0, 3.5, 3.0)
     mus = (4.0, 4.0, 4.0, 4.0)
 
     # Use separate horizons: shorter for training (to speed up DQN updates),
@@ -244,7 +244,6 @@ def main():
                             n_corrs,
                             n_loads,
                             progress_tag,
-                            args.net,
                         )
                         futures.append(fut)
                         submitted += 1

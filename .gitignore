@@ -16,3 +16,6 @@
 *.tex
 *.synctex.gz
 *.json
+__pycache__/
+*.pyc
+*.pyo

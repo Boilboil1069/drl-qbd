@@ -223,7 +223,7 @@ class PrioritizedReplayBuffer:
 def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
               prioritized=True, alpha=0.6, beta_start=0.4, burst_quantile=0.75,
               burst_scale=5.0, progress_tag: str | None = None,
-              net_type: str = "dueling"):
+              net_type: str | None = None):
     """Train DQN agent.
 
     prioritized: if True, use prioritized replay emphasizing burst phases (high arrival intensity phases).
@@ -233,18 +233,14 @@ def train_dqn(env, episodes=500, progress_interval=100, out_dir="training_figs",
     the current experiment configuration, e.g. overall task index and
     (map_mode, corr, load, algo) parameters.
 
-    net_type: "mlp" for original shallow MLP, "dueling" for deeper dueling network.
+    net_type: 保留为兼容参数，但当前实现强制使用普通 MLP，不启用 dueling。
     """
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
 
-    if net_type == "mlp":
-        q = MLP(obs_dim, act_dim).to(device)
-        q_t = MLP(obs_dim, act_dim).to(device)
-    else:
-        # default to dueling network
-        q = DuelingMLP(obs_dim, act_dim).to(device)
-        q_t = DuelingMLP(obs_dim, act_dim).to(device)
+    # 目前统一使用普通 MLP 结构，不启用 dueling
+    q = MLP(obs_dim, act_dim).to(device)
+    q_t = MLP(obs_dim, act_dim).to(device)
 
     q_t.load_state_dict(q.state_dict())
 
