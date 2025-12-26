@@ -132,14 +132,3 @@ python -m experiments.replot_from_saved \
 
 3. **并行实验占用资源过高**
     - 在 `experiments/run_experiment_parallel.py` 顶部调小 `workers`，或缩小 `corr_levels` / `load_factors` 网格规模。
-
----
-
-## 7. 后续改进方向（TODO）
-
-- 增加更多经典路由策略（如随机轮询的变体、基于响应时间的策略）。
-- 支持参数化的成本函数，并在 QBD 理论中同步建模。
-- 增加配置文件/命令行参数以便更灵活地控制实验网格。
-
-如果你在使用过程中遇到问题，建议先查看对应脚本开头的参数设置注释；若仍有疑问，可以在 README 的基础上继续补充自己的实验记录与说明。
-
