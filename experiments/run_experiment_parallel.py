@@ -5,7 +5,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import argparse
 
-import numpy as np  # 新增：用于将嵌套 list 转成 ndarray
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -20,7 +20,7 @@ from utils.plotting import (
     plot_error_vs_load_1d,
 )
 from utils.export_latex import export_latex_table
-from utils.persistence import save_experiment_data  # 新增: 数据持久化
+from utils.persistence import save_experiment_data 
 
 
 # 全局配置一次 matplotlib 字体

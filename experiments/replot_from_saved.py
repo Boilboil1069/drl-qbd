@@ -2,7 +2,10 @@ import os
 import sys
 import argparse
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+# Ensure project root is on sys.path when running as a script
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from utils.persistence import replot_saved
 from utils.plotting import configure_matplotlib_for_chinese
