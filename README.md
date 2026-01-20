@@ -5,7 +5,7 @@
 
 核心组件：
 
-- `env/parallel_queue_env.py`：基于 `simpy` + `gymnasium` 的并联 M/M/1 环境，外部到达为 MAP。
+- `env/parallel_queue_env.py`：基于 `simpy` + `gymnasium` 的并联 M/1 环境，外部到达为 MAP。
 - `agents/`：多种路由策略的 DRL 实现（DQN, A2C, PPO, SAC）。
 - `qbd/qbd_solver.py`：给定 MAP + 路由概率，计算理论平均队长向量 \(L_\text{theory}\)。
 - `experiments/run_experiment.py`：串行版本的网格实验 (相关性 × 负载 × 策略)。
